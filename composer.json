@@ -1,0 +1,27 @@
+{
+    "name": "bronsted/fiberloop",
+    "description": "Fiberloop",
+    "type": "library",
+    "require-dev": {
+        "phpunit/phpunit": "^9.5",
+        "brain/monkey": "^2.6"
+    },
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "bronsted\\": "src/"
+        },
+        "files": [
+            "src/timer.php",
+            "src/stream.php",
+            "src/signal.php"
+        ]
+    },
+    "authors": [
+        {
+            "name": "Søren Brønsted",
+            "email": "soren@bronsted.dk"
+        }
+    ],
+    "require": {}
+}
