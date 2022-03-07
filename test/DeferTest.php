@@ -8,11 +8,11 @@ class DeferTest extends TestCase
     public function testOk()
     {
         $called = false;
-        $scheduler = new FiberLoop();
-        $scheduler->defer(function() use (&$called) {
+        $loop = FiberLoop::instance();
+        $loop->defer(function() use (&$called) {
             $called = true;
         });
-        $scheduler->run();
+        $loop->run();
         $this->assertTrue($called);
     }
 }
