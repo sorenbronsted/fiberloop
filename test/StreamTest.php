@@ -1,7 +1,6 @@
 <?php
 
 use bronsted\FiberLoop;
-use bronsted\Stream;
 use PHPUnit\Framework\TestCase;
 
 class StreamTest extends TestCase
@@ -88,4 +87,5 @@ class StreamTest extends TestCase
         $this->loop->run();
         $this->assertEquals(0, $called);
     }
+
 }
