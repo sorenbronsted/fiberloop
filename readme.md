@@ -11,11 +11,8 @@ Using coroutines enables you to write code which handles multiple tasks in php s
 This makes your program efficient and can handle more work.
 
 ## Installation
-This package can be installed as a [Composer](https://getcomposer.org/) dependency on PHP 8.1 which has fibers 
- build in.
+This package can be installed with [Composer](https://getcomposer.org/)
 
     `composer install bronsted\fiberloop`
 
 ## Usage
-
-Coming soon...

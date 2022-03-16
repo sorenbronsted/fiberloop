@@ -4,8 +4,9 @@ namespace bronsted;
 
 use Closure;
 use Fiber;
-use JetBrains\PhpStorm\Pure;
 use SplQueue;
+use function microtime;
+use function usleep;
 
 /**
  * This is the heart of the fiberloop, where you can schedule coroutines for different work.
@@ -134,7 +135,22 @@ class FiberLoop
      */
     public function run()
     {
-        while(!$this->queue->isEmpty()) {
+        // idle function to ensure that cpu does not goes 100%
+        // it should not sleep when there is a lot of work to do
+        $this->enqueue(function() {
+            $last = microtime(true);
+            $max = 100;
+            while(true) {
+                Fiber::suspend();
+                $delta = microtime(true) - $last;
+                if ($delta < $max) {
+                    usleep($max - $delta);
+                }
+                $last = microtime(true);
+            }
+        });
+
+        while($this->queue->count() > 1) {
             $fiber = $this->queue->dequeue();
             if ($fiber->isSuspended()) {
                 $fiber->resume();
