@@ -5,8 +5,10 @@ namespace bronsted;
 use Closure;
 use Fiber;
 use SplQueue;
+use function intval;
 use function microtime;
 use function usleep;
+
 
 /**
  * This is the heart of the fiberloop, where you can schedule coroutines for different work.
@@ -136,14 +138,14 @@ class FiberLoop
     public function run()
     {
         try {
-            // idle function to ensure that cpu does not goes 100%
+            // idle function to ensure that cpu does not go 100%
             // it should not sleep when there is a lot of work to do
             $this->enqueue(function () {
                 $last = microtime(true);
-                $max = 100;
+                $max = 100; // microseconds
                 while (true) {
                     Fiber::suspend();
-                    $delta = microtime(true) - $last;
+                    $delta = intval((microtime(true) - $last) * 1000000);
                     if ($delta < $max) {
                         usleep($max - $delta);
                     }
