@@ -13,7 +13,6 @@ class StreamTest extends TestCase
         parent::setUp();
         $this->loop = FiberLoop::instance();
         $this->resource = fopen(__DIR__ . '/data/dump', 'r+');
-        stream_set_blocking($this->resource, false);
     }
 
     public function testOnReadableOk()

@@ -8,17 +8,18 @@ use Fiber;
  * Call the closure very time the stream becomes readable
  * @param mixed $stream
  * @param Closure $closure
+ * @param int $timeout
  * @return void
  * @throws \Throwable
  */
-function readStream(mixed $stream, Closure $closure)
+function readStream(mixed $stream, Closure $closure, int $timeout = 0)
 {
     while(true) {
         Fiber::suspend();
         if (!isStreamValid($stream)) {
             return;
         }
-        $n = selectStream(read: $stream);
+        $n = selectStream(read: $stream, timeout: $timeout);
         if ($n > 0) {
             $closure($stream);
         }
@@ -29,17 +30,18 @@ function readStream(mixed $stream, Closure $closure)
  * Call the closure once when the stream becomes readable
  * @param mixed $stream
  * @param Closure $closure
+ * @param int $timeout
  * @return void
  * @throws \Throwable
  */
-function readStreamOnce(mixed $stream, Closure $closure)
+function readStreamOnce(mixed $stream, Closure $closure, int $timeout = 0)
 {
     while(true) {
         Fiber::suspend();
         if (!isStreamValid($stream)) {
             return;
         }
-        $n = selectStream(read: $stream);
+        $n = selectStream(read: $stream, timeout: $timeout);
         if ($n > 0) {
             $closure($stream);
             return;
@@ -102,14 +104,15 @@ function isStreamValid(mixed $stream): bool
 
 /**
  * Select from a stream if stream is ready for reading or writing
- * @param $read
- * @param $write
+ * @param mixed $read
+ * @param mixed $write
+ * @param int $timeout
  * @return int
  */
-function selectStream($read = null, $write = null): int
+function selectStream(mixed $read = null, mixed $write = null, int $timeout = 0): int
 {
     $read = $read ? [$read] : null;
     $write = $write ? [$write] : null;
     $expect = null;
-    return stream_select($read, $write, $expect, 0, 0);
+    return stream_select($read, $write, $expect, 0, $timeout);
 }

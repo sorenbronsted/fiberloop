@@ -4,6 +4,7 @@ namespace bronsted;
 use Closure;
 use Exception;
 use Fiber;
+use function usleep;
 
 /**
  * Call the closure as soon as possible in the future
@@ -75,4 +76,20 @@ function repeat(float $seconds, Closure $closure)
     }
 }
 
-
+/**
+ * This will sleep on every run. This can used to make loop sleep and there by keeping it from going
+ * 100% cpu. This will degrade performance of the loop.
+ * @param float $seconds
+ * @param Closure $closure
+ * @return void
+ */
+function sleep(int $microseconds, Closure $closure)
+{
+    if ($microseconds < 0) {
+        throw new Exception("microseconds must be positive");
+    }
+    while(true) {
+        Fiber::suspend();
+        usleep($microseconds);
+    }
+}

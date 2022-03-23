@@ -25,11 +25,6 @@ class FiberLoop
      */
     private static ?FiberLoop $instance = null;
 
-    /**
-     * @var int max idle time in microseconds
-     */
-    private int $idleMax = 1000;
-
     public function __construct()
     {
         $this->queue  = new SplQueue();
@@ -45,16 +40,6 @@ class FiberLoop
             self::$instance = new FiberLoop();
         }
         return self::$instance;
-    }
-
-    /**
-     * Change the idle max time
-     * @param int $idleMax in microseconds
-     * @return void
-     */
-    public function setIdleMax(int $idleMax)
-    {
-        $this->idleMax = $idleMax;
     }
 
     /**
@@ -152,33 +137,14 @@ class FiberLoop
      */
     public function run()
     {
-        try {
-            // idle function to ensure that cpu does not go 100%
-            // it should not sleep when there is a lot of work to do
-            $this->enqueue(function () {
-                $last = microtime(true);
-                $max = $this->idleMax; // microseconds
-                while (true) {
-                    Fiber::suspend();
-                    $delta = intval((microtime(true) - $last) * 1000000);
-                    if ($delta < $max) {
-                        usleep($max - $delta);
-                    }
-                    $last = microtime(true);
-                }
-            });
-
-            while ($this->queue->count() > 1) {
-                $fiber = $this->queue->dequeue();
-                if ($fiber->isSuspended()) {
-                    $fiber->resume();
-                }
-                if (!$fiber->isTerminated()) {
-                    $this->queue->enqueue($fiber);
-                }
+        while (!$this->queue->isEmpty()) {
+            $fiber = $this->queue->dequeue();
+            if ($fiber->isSuspended()) {
+                $fiber->resume();
             }
-        } finally {
-            $this->queue->shift();
+            if (!$fiber->isTerminated()) {
+                $this->queue->enqueue($fiber);
+            }
         }
     }
 
