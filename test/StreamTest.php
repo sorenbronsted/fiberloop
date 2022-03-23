@@ -26,7 +26,7 @@ class StreamTest extends TestCase
             else {
                 fread($stream, 100);
             }
-        });
+        }, 1000);
         $this->loop->run();
         $this->assertEquals(6, $called);
     }

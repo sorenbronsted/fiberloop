@@ -80,22 +80,24 @@ class FiberLoop
      * Call the closure as long as the resource is valid and the resource has data to be read.
      * @param mixed $resource
      * @param Closure $closure
+     * @param int $timeout in microseconds
      * @return void
      */
-    public function onReadable(mixed $resource, Closure $closure)
+    public function onReadable(mixed $resource, Closure $closure, int $timeout = 0)
     {
-        $this->enqueue(readStream(...), $resource, $closure);
+        $this->enqueue(readStream(...), $resource, $closure, $timeout);
     }
 
     /**
      * Call the closure once when the resource has data to be read.
      * @param mixed $resource
      * @param Closure $closure
+     * @param int $timeout in microseconds
      * @return void
      */
-    public function onReadableOnce(mixed $resource, Closure $closure)
+    public function onReadableOnce(mixed $resource, Closure $closure, int $timeout = 0)
     {
-        $this->enqueue(readStreamOnce(...), $resource, $closure);
+        $this->enqueue(readStreamOnce(...), $resource, $closure, $timeout);
     }
 
     /**
