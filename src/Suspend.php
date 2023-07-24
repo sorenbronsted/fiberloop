@@ -22,7 +22,7 @@ use function microtime;
 class Suspend
 {
     private bool $state;
-    private int $deadline;
+    private float $deadline;
 
     public function __construct(float $timeout = 5)
     {
