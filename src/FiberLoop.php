@@ -123,17 +123,6 @@ class FiberLoop
     }
 
     /**
-     * Call the closure when a matching signal is received
-     * @param int $id
-     * @param Closure $closure
-     * @return void
-     */
-    public function onSignal(int $id, Closure $closure)
-    {
-        $this->enqueue(signal(...), $id, $closure);
-    }
-
-    /**
      * Run the loop until there are no more fibers to run (the queue is empty)
      * @return void
      */

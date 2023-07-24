@@ -12,8 +12,7 @@
         },
         "files": [
             "src/timer.php",
-            "src/stream.php",
-            "src/signal.php"
+            "src/stream.php"
         ]
     },
     "authors": [
@@ -23,8 +22,7 @@
         }
     ],
     "require": {
-        "php": "^8.1",
-        "ext-pcntl": "*"
+        "php": "^8.1"
     },
     "scripts": {
         "test": "vendor/bin/phpunit",
