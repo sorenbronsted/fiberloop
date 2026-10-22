@@ -16,3 +16,17 @@ This package can be installed with [Composer](https://getcomposer.org/)
     `composer install bronsted\fiberloop`
 
 ## Usage
+
+The loop waits for stream readiness or the next timer deadline when no fibers are runnable.
+Waiting for one stream does not block other watchers or timers. Callbacks should still avoid
+blocking I/O and other blocking operations.
+
+The optional timeout on readable watchers is a maximum polling interval in microseconds,
+not an inactivity timeout. A value of `0` waits for readiness; other scheduled work can
+still wake the loop.
+
+## Development
+
+Containers started by the make targets have the `bronsted.fiberloop` label. `make clean`
+only removes exited or created containers with that label; running containers and
+unlabelled containers are left untouched.

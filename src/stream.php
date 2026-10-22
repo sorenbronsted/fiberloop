@@ -14,12 +14,18 @@ use Fiber;
  */
 function readStream(mixed $stream, Closure $closure, int $timeout = 0)
 {
-    while(true) {
-        Fiber::suspend();
+    if ($timeout < 0) {
+        throw new \ValueError('Timeout must be non-negative');
+    }
+    while(isStreamValid($stream)) {
+        Fiber::suspend(new Wait(
+            read: $stream,
+            deadline: $timeout > 0 ? microtime(true) + $timeout / 1000000 : null
+        ));
         if (!isStreamValid($stream)) {
             return;
         }
-        $n = selectStream(read: $stream, timeout: $timeout);
+        $n = selectStream(read: $stream);
         if ($n > 0) {
             $closure($stream);
         }
@@ -36,12 +42,18 @@ function readStream(mixed $stream, Closure $closure, int $timeout = 0)
  */
 function readStreamOnce(mixed $stream, Closure $closure, int $timeout = 0)
 {
-    while(true) {
-        Fiber::suspend();
+    if ($timeout < 0) {
+        throw new \ValueError('Timeout must be non-negative');
+    }
+    while(isStreamValid($stream)) {
+        Fiber::suspend(new Wait(
+            read: $stream,
+            deadline: $timeout > 0 ? microtime(true) + $timeout / 1000000 : null
+        ));
         if (!isStreamValid($stream)) {
             return;
         }
-        $n = selectStream(read: $stream, timeout: $timeout);
+        $n = selectStream(read: $stream);
         if ($n > 0) {
             $closure($stream);
             return;
@@ -58,9 +70,9 @@ function readStreamOnce(mixed $stream, Closure $closure, int $timeout = 0)
  */
 function writeStream(mixed $stream, Closure $closure)
 {
-    while(true) {
-        Fiber::suspend();
-        if (!isStreamValid($stream)) {
+    while(isStreamValid($stream, false)) {
+        Fiber::suspend(new Wait(write: $stream));
+        if (!isStreamValid($stream, false)) {
             return;
         }
         $n = selectStream(write: $stream);
@@ -79,9 +91,9 @@ function writeStream(mixed $stream, Closure $closure)
  */
 function writeStreamOnce(mixed $stream, Closure $closure)
 {
-    while(true) {
-        Fiber::suspend();
-        if (!isStreamValid($stream)) {
+    while(isStreamValid($stream, false)) {
+        Fiber::suspend(new Wait(write: $stream));
+        if (!isStreamValid($stream, false)) {
             return;
         }
         $n = selectStream(write: $stream);
@@ -93,13 +105,14 @@ function writeStreamOnce(mixed $stream, Closure $closure)
 }
 
 /**
- * Check that a stream is valid and not closed
+ * Check that a stream is open, optionally requiring that reading has not reached EOF
  * @param mixed $stream
+ * @param bool $checkEof
  * @return bool
  */
-function isStreamValid(mixed $stream): bool
+function isStreamValid(mixed $stream, bool $checkEof = true): bool
 {
-    return is_resource($stream) && !feof($stream);
+    return is_resource($stream) && (!$checkEof || !feof($stream));
 }
 
 /**

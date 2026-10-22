@@ -1,0 +1,52 @@
+#!/bin/sh
+
+# This mock only records commands and lists synthetic containers. It never
+# invokes Docker or removes any real containers.
+printf '%s\n' "$*" >> "$DOCKER_LOG"
+
+case "$1" in
+    ps)
+        if [ "$DOCKER_PS_FAIL" = 1 ]; then
+            printf '%s\n' 'mock list failure' >&2
+            exit 42
+        fi
+        shift
+        label_filter=
+        statuses=
+        while [ "$#" -gt 0 ]; do
+            if [ "$1" = --filter ]; then
+                shift
+                case "$1" in
+                    label=*) label_filter=${1#label=} ;;
+                    status=*) statuses="$statuses|${1#status=}" ;;
+                esac
+            fi
+            shift
+        done
+        while IFS='|' read -r id label status; do
+            if [ -z "$id" ]; then
+                continue
+            fi
+            if [ -n "$label_filter" ] && [ "$label" != "$label_filter" ]; then
+                continue
+            fi
+            if [ -n "$statuses" ]; then
+                case "$statuses|" in
+                    *"|$status|"*) ;;
+                    *) continue ;;
+                esac
+            fi
+            printf '%s\n' "$id"
+        done <<EOF
+$DOCKER_CONTAINERS
+EOF
+        ;;
+    rm)
+        if [ "$DOCKER_RM_FAIL" = 1 ]; then
+            printf '%s\n' 'mock remove failure' >&2
+            exit 43
+        fi
+        ;;
+    run) ;;
+    *) exit 64 ;;
+esac

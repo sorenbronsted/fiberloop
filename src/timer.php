@@ -32,10 +32,10 @@ function delay(float $seconds, Closure $closure)
     }
     $deadline = microtime(true) + $seconds;
     $done = false;
-    Fiber::suspend();
+    Fiber::suspend(new Wait(deadline: $deadline));
     while (!$done) {
         if (microtime(true) < $deadline) {
-            Fiber::suspend();
+            Fiber::suspend(new Wait(deadline: $deadline));
         }
         else {
             $done = true;
@@ -58,11 +58,11 @@ function repeat(float $seconds, Closure $closure)
         throw new Exception("Seconds must be positive");
     }
     $deadline = microtime(true) + $seconds;
-    Fiber::suspend();
+    Fiber::suspend(new Wait(deadline: $deadline));
     $done = false;
     while (!$done) {
         if (microtime(true) < $deadline) {
-            Fiber::suspend();
+            Fiber::suspend(new Wait(deadline: $deadline));
         }
         else {
             $change = $closure($seconds);

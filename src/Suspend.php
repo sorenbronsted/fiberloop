@@ -50,7 +50,7 @@ class Suspend
             if (microtime(true) > $this->deadline) {
                 throw new Exception('Timeout waiting');
             }
-            Fiber::suspend();
+            Fiber::suspend(new Wait(deadline: $this->deadline, condition: fn() => !$this->state));
         }
     }
 }

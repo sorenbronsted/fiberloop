@@ -5,7 +5,6 @@ namespace bronsted;
 use Closure;
 use Fiber;
 use SplQueue;
-use function intval;
 use function microtime;
 use function usleep;
 
@@ -19,6 +18,11 @@ class FiberLoop
      * @var SplQueue the holding current fibers
      */
     private SplQueue $queue;
+
+    /**
+     * @var array<int, array{Fiber, Wait}> fibers waiting for I/O or a deadline
+     */
+    private array $waiting = [];
 
     /**
      * @var FiberLoop|null singleton if used
@@ -80,7 +84,7 @@ class FiberLoop
      * Call the closure as long as the resource is valid and the resource has data to be read.
      * @param mixed $resource
      * @param Closure $closure
-     * @param int $timeout in microseconds
+     * @param int $timeout maximum polling interval in microseconds; 0 waits for readiness
      * @return void
      */
     public function onReadable(mixed $resource, Closure $closure, int $timeout = 0)
@@ -92,7 +96,7 @@ class FiberLoop
      * Call the closure once when the resource has data to be read.
      * @param mixed $resource
      * @param Closure $closure
-     * @param int $timeout in microseconds
+     * @param int $timeout maximum polling interval in microseconds; 0 waits for readiness
      * @return void
      */
     public function onReadableOnce(mixed $resource, Closure $closure, int $timeout = 0)
@@ -123,19 +127,89 @@ class FiberLoop
     }
 
     /**
-     * Run the loop until there are no more fibers to run (the queue is empty)
+     * Run the loop until there are no more runnable or waiting fibers
      * @return void
      */
     public function run()
     {
-        while (!$this->queue->isEmpty()) {
-            $fiber = $this->queue->dequeue();
-            if ($fiber->isSuspended()) {
-                $fiber->resume();
+        while (!$this->queue->isEmpty() || $this->waiting) {
+            $this->waitForWork($this->queue->isEmpty());
+            $count = $this->queue->count();
+            for ($i = 0; $i < $count && !$this->queue->isEmpty(); $i++) {
+                $fiber = $this->queue->dequeue();
+                if ($fiber->isSuspended()) {
+                    $this->schedule($fiber, $fiber->resume());
+                }
             }
-            if (!$fiber->isTerminated()) {
+        }
+    }
+
+    /**
+     * Poll all streams together, blocking only when there is no runnable work.
+     */
+    private function waitForWork(bool $block): void
+    {
+        $read = [];
+        $write = [];
+        $deadline = null;
+        $now = microtime(true);
+
+        foreach ($this->waiting as $id => [$fiber, $wait]) {
+            if ($wait->isReady($now)) {
+                unset($this->waiting[$id]);
+                $this->queue->enqueue($fiber);
+                $block = false;
+                continue;
+            }
+            if ($wait->read !== null) {
+                $read[(int) $wait->read] = $wait->read;
+            }
+            if ($wait->write !== null) {
+                $write[(int) $wait->write] = $wait->write;
+            }
+            if ($wait->deadline !== null) {
+                $deadline = $deadline === null ? $wait->deadline : min($deadline, $wait->deadline);
+            }
+        }
+
+        if (!$this->waiting) {
+            return;
+        }
+        $timeout = $block ? ($deadline === null ? null : max(0, $deadline - microtime(true))) : 0;
+        $microseconds = $timeout === null ? 0 : (int) ceil($timeout * 1000000);
+
+        if ($read || $write) {
+            $except = null;
+            $seconds = $timeout === null ? null : intdiv($microseconds, 1000000);
+            if (stream_select($read, $write, $except, $seconds, $microseconds % 1000000) === false) {
+                return;
+            }
+        }
+        elseif ($microseconds > 0) {
+            usleep($microseconds);
+        }
+
+        $now = microtime(true);
+        foreach ($this->waiting as $id => [$fiber, $wait]) {
+            if ($wait->isReady($now)
+                || ($wait->read !== null && isset($read[(int) $wait->read]))
+                || ($wait->write !== null && isset($write[(int) $wait->write]))) {
+                unset($this->waiting[$id]);
                 $this->queue->enqueue($fiber);
             }
+        }
+    }
+
+    private function schedule(Fiber $fiber, mixed $wait): void
+    {
+        if ($fiber->isTerminated()) {
+            return;
+        }
+        if ($wait instanceof Wait) {
+            $this->waiting[spl_object_id($fiber)] = [$fiber, $wait];
+        }
+        else {
+            $this->queue->enqueue($fiber);
         }
     }
 
@@ -149,7 +223,6 @@ class FiberLoop
     private function enqueue(Closure $closure, ...$args)
     {
         $fiber = new Fiber($closure);
-        $this->queue->enqueue($fiber);
-        $fiber->start(...$args);
+        $this->schedule($fiber, $fiber->start(...$args));
     }
 }
