@@ -111,7 +111,10 @@ resource, so a second watcher in the same direction on the same resource throws 
 ### `readStream()` and `writeStream()`
 
 The free functions `readStream()` and `writeStream()` provide the same behavior when called directly
-inside a fiber. They return when the stream is closed or reaches EOF:
+inside a fiber. They return when the stream is closed or reaches EOF. At EOF the read closure is
+called one final time, so it can stop waiting instead of hitting a timeout; the closure must handle
+`fread()` returning an empty string. A stream that already reached EOF before the watcher was added
+receives that notification immediately:
 
 ```php
 use function bronsted\readStream;
@@ -154,10 +157,10 @@ need it. The contract is:
 | Action | Result |
 | --- | --- |
 | `fclose($stream)` | The watcher is pruned automatically and the fiber returns normally. |
-| EOF on a read stream | `readStream()` returns normally after the read. |
+| EOF on a read stream | The closure is called once more, then `readStream()` returns normally. |
 | `$watcher->cancel()` | The fiber receives a `CancelledException` at its suspension point. |
 | Fiber returns or throws | Its watchers and timers are cleaned up automatically. |
-| `$loop->stop()` | All pending work is cancelled with `CancelledException`. |
+| `$loop->stop()` on a running loop | All pending work is cancelled with `CancelledException`. |
 | `unset($stream)` | No effect. The loop still holds the resource, so it is not closed. |
 
 `fclose()` is the supported way to close a resource. Because the loop holds a strong reference,
@@ -278,7 +281,8 @@ $loop->defer(function () use ($loop) {
 ```
 
 A stopped loop can be run again. Work that is scheduled after `run()` has returned is processed by
-the next `run()` call.
+the next `run()` call. `stop()` only affects a running loop: calling it before `run()` or after it
+has returned does nothing, so it does not cancel work that is waiting for the next `run()`.
 
 ## Removed API
 

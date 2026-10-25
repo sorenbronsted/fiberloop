@@ -56,19 +56,65 @@ class StreamTest extends TestCase
     public function testOnReadableOk()
     {
         $called = 0;
+        $eof = false;
         $resource = $this->open();
 
-        $this->loop->onReadable($resource, function ($stream) use (&$called) {
+        $this->loop->onReadable($resource, function ($stream) use (&$called, &$eof) {
             $called += 1;
             if ($called === 1) {
                 fgets($stream);
             } else {
                 fread($stream, 100);
             }
+            $eof = feof($stream);
         });
 
         $this->loop->run();
-        $this->assertSame(6, $called);
+        // Six reads plus the final EOF notification.
+        $this->assertSame(7, $called);
+        $this->assertTrue($eof);
+    }
+
+    public function testReadStreamNotifiesOnceAtEof()
+    {
+        [$reader, $writer] = $this->socketPair();
+        $received = '';
+        $eofCalls = 0;
+
+        $this->loop->onReadable($reader, function ($stream) use (&$received, &$eofCalls) {
+            if (feof($stream)) {
+                $eofCalls += 1;
+                return;
+            }
+            $received .= (string) fread($stream, 100);
+        });
+        $this->loop->defer(function () use ($writer) {
+            fwrite($writer, 'payload');
+            fclose($writer);
+        });
+
+        $this->loop->run();
+
+        $this->assertSame('payload', $received);
+        $this->assertSame(1, $eofCalls);
+    }
+
+    public function testReadStreamReportsAlreadyReachedEofWithoutWaiting()
+    {
+        [$reader, $writer] = $this->socketPair();
+        fclose($writer);
+        // Consume the EOF so feof($reader) is true before the watcher is added.
+        $this->assertSame('', fread($reader, 1));
+        $this->assertTrue(feof($reader));
+
+        $calls = 0;
+        $this->loop->onReadable($reader, function () use (&$calls) {
+            $calls += 1;
+        });
+
+        $this->loop->run();
+
+        $this->assertSame(1, $calls);
     }
 
     public function testOnReadableOnInvalidResourceOk()

@@ -117,6 +117,36 @@ class CancelTest extends TestCase
         $this->assertFalse($watcher->isActive());
     }
 
+    public function testWorkScheduledAfterStopRunsInTheNextRun()
+    {
+        $loop = new FiberLoop();
+        $ran = 0;
+
+        $loop->defer(fn() => $loop->stop());
+        $loop->run();
+
+        $loop->defer(function () use (&$ran) {
+            $ran += 1;
+        });
+        $loop->run();
+
+        $this->assertSame(1, $ran);
+    }
+
+    public function testStopOutsideRunDoesNotCancelScheduledWork()
+    {
+        $loop = new FiberLoop();
+        $ran = false;
+
+        $loop->defer(function () use (&$ran) {
+            $ran = true;
+        });
+        $loop->stop();
+        $loop->run();
+
+        $this->assertTrue($ran);
+    }
+
     public function testStopInsideFiberThenSuspendCancelsFiber()
     {
         $loop = new FiberLoop();

@@ -47,6 +47,7 @@ class FiberLoop
     private array $fibers = [];
 
     private bool $stopped = false;
+    private bool $running = false;
     private int $nextWatcherId = 1;
 
     /**
@@ -164,6 +165,7 @@ class FiberLoop
         $previous = self::$current;
         self::$current = $this;
         $this->stopped = false;
+        $this->running = true;
 
         try {
             while (true) {
@@ -221,15 +223,24 @@ class FiberLoop
                 }
             }
         } finally {
+            $this->running = false;
             self::$current = $previous;
         }
     }
 
     /**
      * Stop the loop and cancel all pending work.
+     *
+     * Only a running loop can be stopped. Calling stop() before run() or after
+     * run() has returned does nothing, so work scheduled in between is still
+     * processed by the next run().
      */
     public function stop(): void
     {
+        if (!$this->running) {
+            return;
+        }
+
         $this->stopped = true;
         $this->cancelAllPending();
     }
@@ -342,7 +353,7 @@ class FiberLoop
             $this->enqueueReady($state);
             return;
         }
-        if ($this->stopped) {
+        if ($this->stopped && $this->running) {
             $state->cancelRequested = true;
             $this->enqueueReady($state);
             return;

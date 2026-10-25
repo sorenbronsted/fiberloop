@@ -8,6 +8,9 @@ use Fiber;
  * Call the closure every time the stream becomes readable.
  *
  * The function returns when the stream is closed with fclose() or reaches EOF.
+ * EOF is reported through one final call of the closure, so a reader waiting for
+ * data can react to it instead of waiting for a timeout. The closure must handle
+ * fread() returning an empty string.
  *
  * @param mixed $stream
  * @param Closure $closure
@@ -17,10 +20,20 @@ use Fiber;
  */
 function readStream(mixed $stream, Closure $closure, ?Watcher $watcher = null): void
 {
-    while (isStreamValid($stream)) {
+    while (is_resource($stream)) {
+        if (feof($stream)) {
+            $closure($stream);
+            return;
+        }
+
         Fiber::suspend(Wait::read($stream, $watcher));
 
-        if (!isStreamValid($stream)) {
+        if (!is_resource($stream)) {
+            return;
+        }
+
+        if (feof($stream)) {
+            $closure($stream);
             return;
         }
 
