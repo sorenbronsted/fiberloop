@@ -1,6 +1,5 @@
 <?php
 
-use bronsted\Defer;
 use bronsted\FiberLoop;
 use PHPUnit\Framework\TestCase;
 

@@ -1,90 +1,389 @@
 <?php
 
 use bronsted\FiberLoop;
+use bronsted\Watcher;
 use PHPUnit\Framework\TestCase;
+use function bronsted\readStream;
+use function bronsted\writeStream;
 
 class StreamTest extends TestCase
 {
     private FiberLoop $loop;
-    private $resource = null;
+
+    /** @var list<resource> */
+    private array $resources = [];
 
     protected function setUp(): void
     {
         parent::setUp();
-        $this->loop = FiberLoop::instance();
-        $this->resource = fopen(__DIR__ . '/data/dump', 'r+');
+        $this->loop = new FiberLoop();
+        $this->resources = [];
+    }
+
+    protected function tearDown(): void
+    {
+        foreach ($this->resources as $resource) {
+            if (is_resource($resource)) {
+                fclose($resource);
+            }
+        }
+        parent::tearDown();
+    }
+
+    /**
+     * @return resource
+     */
+    private function open(string $mode = 'r+')
+    {
+        $resource = fopen(__DIR__ . '/data/dump', $mode);
+        $this->resources[] = $resource;
+
+        return $resource;
+    }
+
+    /**
+     * @return array{0: resource, 1: resource}
+     */
+    private function socketPair(): array
+    {
+        $pair = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
+        $this->resources[] = $pair[0];
+        $this->resources[] = $pair[1];
+
+        return $pair;
     }
 
     public function testOnReadableOk()
     {
         $called = 0;
-        $this->loop->onReadable($this->resource, function($stream) use (&$called) {
+        $resource = $this->open();
+
+        $this->loop->onReadable($resource, function ($stream) use (&$called) {
             $called += 1;
-            if ($called == 1) {
+            if ($called === 1) {
                 fgets($stream);
-            }
-            else {
+            } else {
                 fread($stream, 100);
             }
-        }, 1000);
+        });
+
         $this->loop->run();
-        $this->assertEquals(6, $called);
+        $this->assertSame(6, $called);
     }
 
-    public function testOnReadableReadyOk()
+    public function testOnReadableOnInvalidResourceOk()
     {
         $called = 0;
-        $this->loop->onReadableOnce($this->resource, function() use (&$called) {
+        $watcher = $this->loop->onReadable(null, function () use (&$called) {
             $called += 1;
         });
-        $this->loop->run();
-        $this->assertEquals(1, $called);
-    }
 
-    public function testOnReadableReadyOnInvalidResourceOk()
-    {
-        $called = 0;
-        $this->loop->onReadableOnce(null, function() use (&$called) {
-            $called += 1;
-        });
         $this->loop->run();
-        $this->assertEquals(0, $called);
+
+        $this->assertSame(0, $called);
+        $this->assertFalse($watcher->isActive());
     }
 
     public function testOnWriteableOk()
     {
         $called = 0;
-        $this->loop->onWriteable($this->resource, function($stream) use (&$called) {
+        $resource = $this->open();
+
+        $this->loop->onWriteable($resource, function ($stream) use (&$called) {
             $called += 1;
             if ($called > 1) {
                 fclose($stream);
-            }
-            else {
+            } else {
                 fwrite($stream, 'hello');
             }
         });
+
         $this->loop->run();
-        $this->assertEquals(2,$called);
+        $this->assertSame(2, $called);
     }
 
-    public function testOnWriteableReadyOk()
+    public function testOnWriteableOnInvalidResourceOk()
     {
         $called = 0;
-        $this->loop->onWriteableReady($this->resource, function($stream) use (&$called) {
+        $watcher = $this->loop->onWriteable(null, function () use (&$called) {
             $called += 1;
         });
+
         $this->loop->run();
-        $this->assertEquals(1, $called);
+
+        $this->assertSame(0, $called);
+        $this->assertFalse($watcher->isActive());
     }
 
-    public function testOnWriteableReadyOnInvalidResource()
+    public function testDuplicateReadWatcherThrows()
+    {
+        $resource = $this->open();
+        $this->loop->onReadable($resource, fn() => null);
+
+        $this->expectException(LogicException::class);
+        $this->loop->onReadable($resource, fn() => null);
+    }
+
+    public function testDuplicateWriteWatcherThrows()
+    {
+        $resource = $this->open();
+        $this->loop->onWriteable($resource, fn() => null);
+
+        $this->expectException(LogicException::class);
+        $this->loop->onWriteable($resource, fn() => null);
+    }
+
+    public function testCancelFreesResourceForNewWatcher()
+    {
+        $resource = $this->open();
+        $first = $this->loop->onReadable($resource, fn() => null);
+        $first->cancel();
+
+        $second = $this->loop->onReadable($resource, fn() => null);
+
+        $this->assertTrue($second->isActive());
+        $this->assertFalse($first->isActive());
+    }
+
+    public function testReadAndWriteWatcherCanCoexist()
+    {
+        $resource = $this->open();
+
+        $read = $this->loop->onReadable($resource, fn() => null);
+        $write = $this->loop->onWriteable($resource, fn() => null);
+
+        $this->assertTrue($read->isActive());
+        $this->assertTrue($write->isActive());
+    }
+
+    public function testCancelWatcher()
+    {
+        [$read, $write] = $this->socketPair();
+        $called = 0;
+
+        $watcher = $this->loop->onReadable($read, function () use (&$called) {
+            $called += 1;
+        });
+
+        $this->loop->defer(fn() => $watcher->cancel());
+        $this->loop->run();
+
+        $this->assertSame(0, $called);
+        $this->assertFalse($watcher->isActive());
+    }
+
+    public function testCancelInCallback()
     {
         $called = 0;
-        $this->loop->onWriteableReady(0, function() use (&$called) {
+        $watcher = null;
+        $resource = $this->open();
+
+        $watcher = $this->loop->onReadable($resource, function () use (&$called, &$watcher) {
             $called += 1;
+            $watcher->cancel();
         });
+
         $this->loop->run();
-        $this->assertEquals(0, $called);
+
+        $this->assertSame(1, $called);
+        $this->assertFalse($watcher->isActive());
     }
 
+    public function testCancelAfterFcloseIsNoOp()
+    {
+        $called = 0;
+        $resource = $this->open();
+        $watcher = $this->loop->onReadable($resource, function () use (&$called) {
+            $called += 1;
+        });
+
+        fclose($resource);
+        $watcher->cancel();
+
+        $this->loop->run();
+
+        $this->assertSame(0, $called);
+        $this->assertFalse($watcher->isActive());
+    }
+
+    public function testFcloseInCallbackIsNormalTermination()
+    {
+        $called = 0;
+        $resource = $this->open();
+
+        $this->loop->onReadable($resource, function ($stream) use (&$called) {
+            $called += 1;
+            fclose($stream);
+        });
+
+        $this->loop->run();
+        $this->assertSame(1, $called);
+    }
+
+    public function testFcloseBeforeRunIsNormalTermination()
+    {
+        $called = 0;
+        $resource = $this->open();
+        $watcher = $this->loop->onReadable($resource, function () use (&$called) {
+            $called += 1;
+        });
+
+        fclose($resource);
+        $this->loop->run();
+
+        $this->assertSame(0, $called);
+        $this->assertFalse($watcher->isActive());
+    }
+
+    public function testFcloseFromAnotherFiberIsNormalTermination()
+    {
+        [$read, $write] = $this->socketPair();
+        $called = 0;
+
+        $watcher = $this->loop->onReadable($read, function () use (&$called) {
+            $called += 1;
+        });
+
+        $this->loop->defer(fn() => fclose($read));
+        $this->loop->run();
+
+        $this->assertSame(0, $called);
+        $this->assertFalse($watcher->isActive());
+    }
+
+    public function testFcloseDoesNotThrowCancelledException()
+    {
+        $finally = false;
+        $cancelled = false;
+        $resource = $this->open();
+
+        $this->loop->defer(function () use ($resource, &$finally, &$cancelled) {
+            try {
+                readStream($resource, fn() => null);
+            } catch (bronsted\CancelledException) {
+                $cancelled = true;
+            } finally {
+                $finally = true;
+            }
+        });
+        $this->loop->defer(fn() => fclose($resource));
+
+        $this->loop->run();
+
+        $this->assertFalse($cancelled);
+        $this->assertTrue($finally);
+    }
+
+    public function testUnrefDoesNotKeepLoopAlive()
+    {
+        [$read, $write] = $this->socketPair();
+        $called = 0;
+
+        $watcher = $this->loop->onReadable($read, function () use (&$called) {
+            $called += 1;
+        });
+        $watcher->unref();
+
+        $this->loop->run();
+
+        $this->assertSame(0, $called);
+        $this->assertTrue($watcher->isActive());
+        $this->assertFalse($watcher->isReferenced());
+    }
+
+    public function testRefKeepsLoopAlive()
+    {
+        [$read, $write] = $this->socketPair();
+        $called = 0;
+
+        $watcher = $this->loop->onReadable($read, function () use (&$called) {
+            $called += 1;
+        });
+
+        $this->assertTrue($watcher->isReferenced());
+
+        $watcher->unref();
+        $watcher->ref();
+
+        $this->assertTrue($watcher->isReferenced());
+    }
+
+    public function testClosedWatcherIsPrunedBeforeNewRegistration()
+    {
+        $first = $this->open();
+        $firstWatcher = $this->loop->onReadable($first, fn() => null);
+
+        fclose($first);
+
+        $second = $this->open();
+        $secondWatcher = $this->loop->onReadable($second, fn() => null);
+
+        $this->assertTrue($secondWatcher->isActive());
+        $this->assertFalse($firstWatcher->isActive());
+    }
+
+    public function testCancelWriteWatcherUnregistersWriteMap()
+    {
+        $resource = $this->open();
+        $watcher = $this->loop->onWriteable($resource, fn() => null);
+
+        $watcher->cancel();
+
+        $this->assertFalse($watcher->isActive());
+    }
+
+    public function testWriteStreamReturnsWhenClosedWhileWaiting()
+    {
+        $resource = $this->open();
+
+        $this->loop->defer(function () use ($resource) {
+            writeStream($resource, fn() => null);
+        });
+        $this->loop->defer(fn() => fclose($resource));
+
+        $this->loop->run();
+
+        $this->assertFalse(is_resource($resource));
+    }
+
+    public function testSelectUsesTimerAsTimeout()
+    {
+        [$read] = $this->socketPair();
+        $called = 0;
+
+        $watcher = $this->loop->onReadable($read, function () use (&$called) {
+            $called += 1;
+        });
+        $this->loop->delay(0.02, fn() => $watcher->cancel());
+
+        $this->loop->run();
+
+        $this->assertSame(0, $called);
+        $this->assertFalse($watcher->isActive());
+    }
+
+    public function testWriteStreamWorksAfterPeerHalfClose()
+    {
+        [$reader, $writer] = $this->socketPair();
+
+        stream_socket_shutdown($writer, STREAM_SHUT_WR);
+
+        // Consume the EOF so feof($reader) becomes true.
+        $this->assertSame('', fread($reader, 1));
+        $this->assertTrue(feof($reader));
+
+        $called = 0;
+        $this->loop->defer(function () use ($reader, &$called) {
+            writeStream($reader, function ($stream) use (&$called) {
+                $called += 1;
+                fwrite($stream, 'reply');
+                fclose($stream);
+            });
+        });
+
+        $this->loop->run();
+
+        $this->assertSame(1, $called);
+        $this->assertSame('reply', fread($writer, 10));
+    }
 }

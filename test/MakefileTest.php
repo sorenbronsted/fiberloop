@@ -1,5 +1,6 @@
 <?php
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 class MakefileTest extends TestCase
@@ -99,9 +100,7 @@ class MakefileTest extends TestCase
         $this->assertStringContainsString('mock remove failure', $output);
     }
 
-    /**
-     * @dataProvider containerTargets
-     */
+    #[DataProvider('containerTargets')]
     public function testContainerTargetsApplyProjectLabel(string $target, string $suffix)
     {
         [$status, $calls, $output] = $this->runMake($target);

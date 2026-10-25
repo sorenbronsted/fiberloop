@@ -35,4 +35,31 @@ class SuspendTest extends TestCase
         $this->loop->run();
         $this->assertTrue(true);
     }
+
+    public function testDoneBeforeWait()
+    {
+        $this->loop->defer(function() {
+            $suspend = new Suspend();
+            $suspend->done();
+            $suspend->wait();
+            $this->assertTrue(true);
+        });
+        $this->loop->run();
+    }
+
+    public function testWaitOutsideFiberThrows()
+    {
+        $this->expectException(Exception::class);
+        (new Suspend())->wait();
+    }
+
+    public function testExpiredBeforeWaitThrows()
+    {
+        $this->expectException(Exception::class);
+
+        $this->loop->defer(function() {
+            (new Suspend(-1))->wait();
+        });
+        $this->loop->run();
+    }
 }
